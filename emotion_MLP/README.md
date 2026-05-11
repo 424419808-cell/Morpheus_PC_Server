@@ -68,10 +68,12 @@ emotion_MLP/
 │
 ├── training/                        # 训练脚本 & 数据采集
 │   ├── pc_vision_server.py          # 数据采集服务器（Flask + MediaPipe）
+│   ├── gen_batch_data.py             # 批量生成情绪 BS 序列（供渲染用）
 │   ├── train_angle2bs.py            # 训练：正向模型（角度→BS）
 │   ├── train_inverse_cycle.py       # 训练：全脸逆向模型（循环一致）
 │   ├── train_upper_face_mlp.py      # 训练：上半脸逆向模型
-│   └── train_lower_face_mlp.py      # 训练：下半脸逆向模型
+│   ├── train_lower_face_mlp.py      # 训练：下半脸逆向模型
+│   └── train_brain.py               # 训练：情感大脑模型（情绪标签→52 BS）
 │
 ├── inference/                       # 推理/部署测试脚本
 │   ├── test_fullface.py             # 测试：全脸实时驱动（UDP）
@@ -86,7 +88,9 @@ emotion_MLP/
 │   ├── xunfei_register.py           # 讯飞声纹注册工具
 │   ├── data_cleaner.py              # 交互式数据审核清洗工具
 │   ├── clean_json.py                # JSON 批量删除 & 重新编号
-│   └── compare_lips.py              # 唇部 blendshape 数值对比
+│   ├── compare_lips.py              # 唇部 blendshape 数值对比
+│   ├── batch_render_emotions.sh     # 批量 Blender 渲染所有情绪动画
+│   └── render_transition.py         # 情感过渡动画生成+Blender渲染+视频合成
 │
 ├── models/                          # 预训练模型权重
 │   ├── angle2bs_full.pth            # 正向模型：30角度 → 52 BS
@@ -138,10 +142,12 @@ emotion_MLP/
 | 文件 | 说明 |
 |------|------|
 | `training/pc_vision_server.py` | Flask 数据采集服务器：接收舵机指令，同步采集摄像头画面（MediaPipe 提取 52 维 BS），构建训练数据集 |
+| `training/gen_batch_data.py` | 批量生成情绪 BS 序列数据：根据情绪名称生成 60 帧线性插值 52 维 BS，存为 .npy 供 Blender 渲染 |
 | `training/train_angle2bs.py` | 训练正向模型：舵机角度 → 52维 blendshape（256-128-64 MLP + ReLU + Dropout） |
 | `training/train_inverse_cycle.py` | 训练全脸逆向模型：52维 BS → 全部舵机角度，使用循环一致损失 |
 | `training/train_upper_face_mlp.py` | 训练上半脸逆向：19维 BS（眉毛+眼睛）→ 8个舵机角度 |
 | `training/train_lower_face_mlp.py` | 训练下半脸逆向：32维 BS（嘴巴+鼻子+脸颊）→ 16个舵机角度 |
+| `training/train_brain.py` | 训练情感大脑模型：情绪 one-hot 标签 → 52 维 BS，生成 `models/emotion_brain.pth` |
 
 ### 工具脚本
 
@@ -151,6 +157,8 @@ emotion_MLP/
 | `utils/clean_json.py` | 批量清洗工具：按索引范围删除 JSON 数据集中的样本并重新编号 |
 | `utils/compare_lips.py` | 数据对比工具：打印指定样本 ID 的 22 维唇部 blendshape 参数对比表 |
 | `utils/xunfei_register.py` | 讯飞声纹注册工具 |
+| `utils/render_transition.py` | 情感过渡动画生成：加载 emotion_brain 模型，计算二阶平滑过渡 BS → Blender 渲染 → ffmpeg 合成视频 |
+| `utils/batch_render_emotions.sh` | 批量渲染脚本：遍历 19 种情绪，自动执行数据生成→Blender 渲染→ffmpeg 视频合成 |
 
 ### 推理/部署脚本
 
@@ -293,6 +301,9 @@ python training/train_inverse_cycle.py
 # 分区逆向模型
 python training/train_upper_face_mlp.py
 python training/train_lower_face_mlp.py
+
+# 情感大脑模型（情绪标签 → 52 BS）
+python training/train_brain.py
 ```
 
 训练数据来自 `motor_babbling_data_PC.json`（机械脸随机摆动采集的舵机角度-blendshape 配对数据）。
