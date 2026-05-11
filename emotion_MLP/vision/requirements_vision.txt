@@ -1,0 +1,11 @@
+# Vision模块依赖
+opencv-python>=4.8.0
+mediapipe>=0.10.7
+face-recognition>=1.3.0
+dlib>=19.24.0
+numpy>=1.21.0
+pandas>=1.5.0  # 可选，用于CSV导出
+
+# 如果需要GPU支持，dlib需要编译CUDA版本
+# 在WSL2中：pip install dlib
+# 或从源码编译：https://gist.github.com/ageitgey/629d75c1baac34dfa5ca2a1928a7aeaf

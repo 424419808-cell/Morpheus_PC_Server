@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Blender 渲染输出
+blender_test/output/
+blender_test/temp/
+
+# Claude Code 缓存配置
+.claude/
+
+# 临时进度文件
+data_cleaner_progress.json
+
+# 预训练模型（LBPH 人脸识别模型，166MB 超过 GitHub 100MB 限制，可从 dataset/ 重新生成）
+emotion_MLP/vision/model.yml

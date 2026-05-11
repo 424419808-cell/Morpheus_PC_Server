@@ -1,0 +1,11 @@
+# ==================== I2C / 舵机驱动 ====================
+# smbus2: PCA9685 I2C 通信（替代 smbus，支持 Python 3.11+）
+smbus2>=0.4.0
+
+# ==================== 数据处理 ====================
+# numpy: 数值计算（morpheus_trackerv*.py 卡尔曼滤波 + data_collect*.py 随机数）
+numpy>=1.21.0
+
+# ==================== HTTP 客户端（数据采集） ====================
+# requests: data_collect2/3.py 通过 HTTP POST 向 PC 端 Flask 采集服务器发送指令
+requests>=2.25.0
