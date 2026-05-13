@@ -87,7 +87,8 @@ def load_cycle_models(device):
             nn.Linear(128, 64), nn.ReLU(), nn.Dropout(0.2),
             nn.Linear(64, output_dim),
         )
-        fwd_net.load_state_dict(fwd_ckpt["model_state_dict"])
+        fwd_sd = {k.replace("net.", ""): v for k, v in fwd_ckpt["model_state_dict"].items()}
+        fwd_net.load_state_dict(fwd_sd)
         fwd_net.to(device).eval()
 
         # 加载上下半脸逆向模型
@@ -112,8 +113,10 @@ def load_cycle_models(device):
 
         upper_net = make_inverse(upper_dim_in, upper_dim_out)
         lower_net = make_inverse(lower_dim_in, lower_dim_out)
-        upper_net.load_state_dict(upper_ckpt["model_state_dict"])
-        lower_net.load_state_dict(lower_ckpt["model_state_dict"])
+        upper_sd = {k.replace("net.", ""): v for k, v in upper_ckpt["model_state_dict"].items()}
+        lower_sd = {k.replace("net.", ""): v for k, v in lower_ckpt["model_state_dict"].items()}
+        upper_net.load_state_dict(upper_sd)
+        lower_net.load_state_dict(lower_sd)
         upper_net.to(device).eval()
         lower_net.to(device).eval()
 
@@ -158,28 +161,29 @@ def cycle_consistency_loss(pred_bs, cycle_models, device):
         key = bs_keys[arkit_idx + 1]
         bs_dict[key] = pred_bs[:, arkit_idx]
 
-    # 上半脸
-    upper_input = torch.stack([bs_dict.get(k, torch.zeros(batch_size, device=device))
-                               for k in upper_bs_keys], dim=1)
-    upper_pred = cycle_models["upper"](upper_input)
+    with torch.no_grad():
+        # 上半脸
+        upper_input = torch.stack([bs_dict.get(k, torch.zeros(batch_size, device=device))
+                                   for k in upper_bs_keys], dim=1)
+        upper_pred = cycle_models["upper"](upper_input)
 
-    # 下半脸
-    lower_bs_keys = [bs_keys[i] for i in lower_bs_idx]
-    lower_input = torch.stack([bs_dict.get(k, torch.zeros(batch_size, device=device))
-                               for k in lower_bs_keys], dim=1)
-    lower_pred = cycle_models["lower"](lower_input)
+        # 下半脸
+        lower_bs_keys = [bs_keys[i] for i in lower_bs_idx]
+        lower_input = torch.stack([bs_dict.get(k, torch.zeros(batch_size, device=device))
+                                   for k in lower_bs_keys], dim=1)
+        lower_pred = cycle_models["lower"](lower_input)
 
-    # 合并角度（归一化 → 真实角度 → 归一化）
-    angle_vec = torch.zeros(batch_size, len(cycle_models["used_motors"]), device=device)
-    for i, mid in enumerate(upper_motor_ids):
-        idx = cycle_models["used_motors"].index(mid)
-        angle_vec[:, idx] = upper_pred[:, i]
-    for i, mid in enumerate(lower_motor_ids):
-        idx = cycle_models["used_motors"].index(mid)
-        angle_vec[:, idx] = lower_pred[:, i]
+        # 合并角度
+        angle_vec = torch.zeros(batch_size, len(cycle_models["used_motors"]), device=device)
+        for i, mid in enumerate(upper_motor_ids):
+            idx = cycle_models["used_motors"].index(mid)
+            angle_vec[:, idx] = upper_pred[:, i]
+        for i, mid in enumerate(lower_motor_ids):
+            idx = cycle_models["used_motors"].index(mid)
+            angle_vec[:, idx] = lower_pred[:, i]
 
-    # 通过正向模型重建 BS
-    recon_bs = cycle_models["forward"](angle_vec)
+        # 通过正向模型重建 BS
+        recon_bs = cycle_models["forward"](angle_vec)
     return nn.functional.l1_loss(recon_bs, pred_bs)
 
 

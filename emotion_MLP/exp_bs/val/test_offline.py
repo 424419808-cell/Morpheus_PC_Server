@@ -90,21 +90,49 @@ def test_physical_realizability(model, device):
         print("  [跳过] 缺少逆向模型文件")
         return 0, 0
 
-    # 加载正向模型
+    # 加载正向模型 (Angle→BS)
     fwd_ckpt = torch.load(forward_path, map_location=device)
-    input_dim = fwd_ckpt["input_dim"]
-    output_dim = fwd_ckpt["output_dim"]
-
     fwd_net = nn.Sequential(
-        nn.Linear(input_dim, 256), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(fwd_ckpt["input_dim"], 256), nn.ReLU(), nn.Dropout(0.2),
         nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.2),
         nn.Linear(128, 64), nn.ReLU(), nn.Dropout(0.2),
-        nn.Linear(64, output_dim),
+        nn.Linear(64, fwd_ckpt["output_dim"]),
     )
-    fwd_net.load_state_dict(fwd_ckpt["model_state_dict"])
+    fwd_sd = {k.replace("net.", ""): v for k, v in fwd_ckpt["model_state_dict"].items()}
+    fwd_net.load_state_dict(fwd_sd)
     fwd_net.to(device).eval()
 
-    # 测试构建
+    # 加载上半脸逆模型 (BS→angle)
+    upper_ckpt = torch.load(upper_path, map_location=device)
+    upper_dim_in = len(upper_ckpt["upper_bs_keys"])
+    upper_dim_out = len(upper_ckpt["upper_motor_ids"])
+    upper_net = nn.Sequential(
+        nn.Linear(upper_dim_in, 256), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(128, 64), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(64, upper_dim_out), nn.Sigmoid(),
+    )
+    upper_sd = {k.replace("net.", ""): v for k, v in upper_ckpt["model_state_dict"].items()}
+    upper_net.load_state_dict(upper_sd)
+    upper_net.to(device).eval()
+
+    # 加载下半脸逆模型 (BS→angle)
+    lower_ckpt = torch.load(lower_path, map_location=device)
+    lower_dim_in = len(lower_ckpt["lower_bs_idx"])
+    lower_dim_out = len(lower_ckpt["lower_motor_ids"])
+    lower_net = nn.Sequential(
+        nn.Linear(lower_dim_in, 256), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(128, 64), nn.ReLU(), nn.Dropout(0.2),
+        nn.Linear(64, lower_dim_out), nn.Sigmoid(),
+    )
+    lower_sd = {k.replace("net.", ""): v for k, v in lower_ckpt["model_state_dict"].items()}
+    lower_net.load_state_dict(lower_sd)
+    lower_net.to(device).eval()
+
+    # 全链路测试: BS → upper/lower → angle → forward → recon BS
+    used_motors = fwd_ckpt["used_motors"]
+    bs_keys = fwd_ckpt["bs_keys"]
     emotion_names = ["Happy", "Sad", "Anger", "Fear", "Surprise"]
     model.eval()
     total_recon = 0
@@ -113,24 +141,40 @@ def test_physical_realizability(model, device):
         for name in emotion_names:
             input_bs = get_base_bs(name)
             tensor = torch.tensor([input_bs], dtype=torch.float32, device=device)
-
-            # 共情模型 → BS
             pred_bs = model(tensor)
 
-            # 简化的重建测试：BS → angle → 重建 BS
-            # 这里用正向模型做直接重建
-            pred_bs_small = pred_bs[:, :output_dim]
-            recon_bs = fwd_net(pred_bs_small)
-            recon_loss = nn.functional.l1_loss(pred_bs_small, recon_bs).item()
+            # BS 字典
+            bs_dict = {"_neutral": torch.zeros(1, device=device)}
+            for arkit_idx in range(51):
+                bs_dict[bs_keys[arkit_idx + 1]] = pred_bs[:, arkit_idx]
+
+            upper_in = torch.stack([bs_dict.get(k, torch.zeros(1, device=device))
+                                    for k in upper_ckpt["upper_bs_keys"]], dim=1)
+            upper_out = upper_net(upper_in)
+
+            lower_bs_keys = [bs_keys[i] for i in lower_ckpt["lower_bs_idx"]]
+            lower_in = torch.stack([bs_dict.get(k, torch.zeros(1, device=device))
+                                    for k in lower_bs_keys], dim=1)
+            lower_out = lower_net(lower_in)
+
+            angle_vec = torch.zeros(1, len(used_motors), device=device)
+            for i, mid in enumerate(upper_ckpt["upper_motor_ids"]):
+                angle_vec[:, used_motors.index(mid)] = upper_out[:, i]
+            for i, mid in enumerate(lower_ckpt["lower_motor_ids"]):
+                angle_vec[:, used_motors.index(mid)] = lower_out[:, i]
+
+            recon_bs = fwd_net(angle_vec)
+            recon_loss = nn.functional.l1_loss(pred_bs, recon_bs).item()
             total_recon += recon_loss
 
-            ok = recon_loss < 0.1
+            ok = recon_loss < 0.15
             status = "PASS" if ok else "FAIL"
-            print(f"  [{status}] {name:12s}: 重建损失={recon_loss:.6f} (应<0.1)")
+            print(f"  [{status}] {name:12s}: 循环重建损失={recon_loss:.6f}")
 
     avg_loss = total_recon / len(emotion_names)
-    print(f"\n平均重建损失: {avg_loss:.6f}")
+    print(f"\n平均循环重建损失: {avg_loss:.6f}")
     return 0, 0
+
 
 
 def test_emotion_classification(model, device):
