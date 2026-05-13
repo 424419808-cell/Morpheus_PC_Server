@@ -23,7 +23,7 @@ VIDEO_STREAM_URL = "http://172.16.1.55:5000/video_feed"
 RPI_IP = "172.16.0.166"
 RPI_PORT = 8888
 MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "upper_face_bs2angle.pth")
-LANDMARKER_MODEL = os.path.join(BASE_DIR, "..", "face_landmarker.task")
+LANDMARKER_MODEL = os.path.join(BASE_DIR, "..", "..", "face_landmarker.task")
 
 # ================= 模型结构定义 =================
 class UpperFaceBS2Angle(nn.Module):

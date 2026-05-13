@@ -2,8 +2,8 @@ import json
 import os
 
 # ================= 配置区 =================
-INPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "motor_babbling_data_PC.json")
-OUTPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "motor_babbling_data_PC_base.json")
+INPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data_coll", "raw_data", "motor_babbling_data_PC.json")
+OUTPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data_coll", "raw_data", "motor_babbling_data_PC_base.json")
 # ==========================================
 
 def clean_and_reindex_data():

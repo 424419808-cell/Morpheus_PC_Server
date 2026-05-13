@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-下半脸专用逆向模型训练 (BS → 舵机)
-输入：下半脸 BS（嘴巴+鼻子+脸颊等，共32维）
-输出：16维下半脸舵机归一化角度（电机0,1,7,8,9,13,14,15,16,18,19,20,21,22,28,29）
-训练方式：循环一致性 + 监督学习 + 简单物理约束（与上半脸完全一致）
+上半脸专用逆向模型训练 (BS → 舵机)
+输入：19维上半脸 BS（眉毛+眼睛）
+输出：8维上半脸舵机归一化角度（电机2,3,4,5,24,25,26,27）
+训练方式：循环一致性 + 监督学习 + 简单物理约束
 """
 
 import json
@@ -17,16 +17,13 @@ from sklearn.model_selection import train_test_split
 
 # ==================== 区域定义 ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 上半脸 BS 键（用于排除，得到下半脸）
 UPPER_BS_KEYS = [
     'browDownLeft', 'browDownRight', 'browInnerUp', 'browOuterUpLeft', 'browOuterUpRight',
     'eyeBlinkLeft', 'eyeBlinkRight', 'eyeSquintLeft', 'eyeSquintRight', 'eyeWideLeft', 'eyeWideRight',
     'eyeLookDownLeft', 'eyeLookDownRight', 'eyeLookInLeft', 'eyeLookInRight',
     'eyeLookOutLeft', 'eyeLookOutRight', 'eyeLookUpLeft', 'eyeLookUpRight'
 ]
-
-# 下半脸舵机 ID（嘴巴、鼻子、脸颊）
-LOWER_MOTOR_IDS = [0, 1, 7, 8, 9, 13, 14, 15, 16, 18, 19, 20, 21, 22, 28, 29]
+UPPER_MOTOR_IDS = [2, 3, 4, 5, 24, 25, 26, 27]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"使用设备: {device}")
@@ -61,44 +58,38 @@ for p in forward_model.parameters():
 print("正向模型加载成功")
 
 # ==================== 构建索引 ====================
-# 上半脸 BS 索引（用于排除）
 upper_bs_idx = [bs_keys_full.index(k) for k in UPPER_BS_KEYS if k in bs_keys_full]
-# 下半脸 BS 索引：所有非上半脸且非 _neutral 的 BS
-lower_bs_idx = [i for i in range(len(bs_keys_full)) if i not in upper_bs_idx and bs_keys_full[i] != '_neutral']
-
-# 下半脸舵机索引
-lower_motor_idx = [used_motors_full.index(mid) for mid in LOWER_MOTOR_IDS if mid in used_motors_full]
-
-print(f"下半脸 BS 数量: {len(lower_bs_idx)}, 舵机数量: {len(lower_motor_idx)}")
+upper_motor_idx = [used_motors_full.index(mid) for mid in UPPER_MOTOR_IDS if mid in used_motors_full]
+print(f"上半脸 BS 数量: {len(upper_bs_idx)}, 舵机数量: {len(upper_motor_idx)}")
 
 # ==================== 加载数据 ====================
-json_path = os.path.join(BASE_DIR, '..', 'data', 'motor_babbling_data_PC.json')
+json_path = os.path.join(BASE_DIR, '..', '..', 'data_coll', 'raw_data', 'motor_babbling_data_PC.json')
 with open(json_path, 'r') as f:
     raw_data = json.load(f)
 
-all_bs_lower, all_angles_lower_norm = [], []
+all_bs_upper, all_angles_upper_norm = [], []
 for item in raw_data:
     bs_dict = item["blendshapes"]
-    bs_lower = [bs_dict.get(bs_keys_full[i], 0.0) for i in lower_bs_idx]
-    all_bs_lower.append(np.array(bs_lower, dtype=np.float32))
-
+    bs_upper = [bs_dict.get(bs_keys_full[i], 0.0) for i in upper_bs_idx]
+    all_bs_upper.append(np.array(bs_upper, dtype=np.float32))
+    
     motor_dict = item["motor_commands"]
     angle_norm = []
-    for mid in LOWER_MOTOR_IDS:
+    for mid in UPPER_MOTOR_IDS:
         raw = motor_dict.get(str(mid), 0.0)
         minv, maxv = motor_ranges[mid]
         norm = (raw - minv) / (maxv - minv) if maxv > minv else 0.5
         angle_norm.append(norm)
-    all_angles_lower_norm.append(np.array(angle_norm, dtype=np.float32))
+    all_angles_upper_norm.append(np.array(angle_norm, dtype=np.float32))
 
-X = np.stack(all_bs_lower)
-Y = np.stack(all_angles_lower_norm)
+X = np.stack(all_bs_upper)
+Y = np.stack(all_angles_upper_norm)
 print(f"样本数: {len(X)}")
 
 X_train, X_temp, Y_train, Y_temp = train_test_split(X, Y, test_size=0.3, random_state=42)
 X_val, X_test, Y_val, Y_test = train_test_split(X_temp, Y_temp, test_size=0.5, random_state=42)
 
-class LowerFaceDataset(Dataset):
+class UpperFaceDataset(Dataset):
     def __init__(self, bs, angles):
         self.bs = torch.tensor(bs, dtype=torch.float32)
         self.angles = torch.tensor(angles, dtype=torch.float32)
@@ -106,11 +97,11 @@ class LowerFaceDataset(Dataset):
     def __getitem__(self, idx): return self.bs[idx], self.angles[idx]
 
 batch_size = 64
-train_loader = DataLoader(LowerFaceDataset(X_train, Y_train), batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(LowerFaceDataset(X_val, Y_val), batch_size=batch_size)
+train_loader = DataLoader(UpperFaceDataset(X_train, Y_train), batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(UpperFaceDataset(X_val, Y_val), batch_size=batch_size)
 
-# ==================== 下半脸逆向模型 ====================
-class LowerFaceBS2Angle(nn.Module):
+# ==================== 上半脸逆向模型 ====================
+class UpperFaceBS2Angle(nn.Module):
     def __init__(self, input_dim, output_dim, hidden_dims=[256, 128, 64]):
         super().__init__()
         layers = []
@@ -126,7 +117,7 @@ class LowerFaceBS2Angle(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-model = LowerFaceBS2Angle(len(lower_bs_idx), len(lower_motor_idx)).to(device)
+model = UpperFaceBS2Angle(len(upper_bs_idx), len(upper_motor_idx)).to(device)
 
 # ==================== 损失函数 ====================
 criterion_cycle = nn.SmoothL1Loss()
@@ -149,10 +140,10 @@ optimizer = optim.Adam(model.parameters(), lr=1e-3)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
 # ==================== 辅助函数 ====================
-def fill_full_angle(lower_angles):
-    batch = lower_angles.size(0)
+def fill_full_angle(upper_angles):
+    batch = upper_angles.size(0)
     full = torch.zeros(batch, len(used_motors_full), device=device)
-    full[:, lower_motor_idx] = lower_angles
+    full[:, upper_motor_idx] = upper_angles
     return full
 
 # ==================== 训练循环 ====================
@@ -165,47 +156,47 @@ for epoch in range(num_epochs):
     train_loss_total = 0.0
     for bs_batch, angle_batch in train_loader:
         bs_batch, angle_batch = bs_batch.to(device), angle_batch.to(device)
-
-        pred_lower = model(bs_batch)
-        full_pred = fill_full_angle(pred_lower)
+        
+        pred_upper = model(bs_batch)
+        full_pred = fill_full_angle(pred_upper)
         recon_bs_full = forward_model(full_pred)
-        recon_bs_lower = recon_bs_full[:, lower_bs_idx]
-
-        loss_cycle = criterion_cycle(recon_bs_lower, bs_batch)
-        loss_sup = criterion_angle(pred_lower, angle_batch)
-        loss_center = centering_loss(pred_lower)
-        loss_boundary = boundary_loss(pred_lower)
-
+        recon_bs_upper = recon_bs_full[:, upper_bs_idx]
+        
+        loss_cycle = criterion_cycle(recon_bs_upper, bs_batch)
+        loss_sup = criterion_angle(pred_upper, angle_batch)
+        loss_center = centering_loss(pred_upper)
+        loss_boundary = boundary_loss(pred_upper)
+        
         loss = (lambda_cycle * loss_cycle +
                 lambda_sup * loss_sup +
                 lambda_center * loss_center +
                 lambda_boundary * loss_boundary)
-
+        
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         train_loss_total += loss.item() * bs_batch.size(0)
-
+    
     train_loss_total /= len(train_loader.dataset)
-
+    
     # 验证
     model.eval()
     val_loss_total = 0.0
     with torch.no_grad():
         for bs_batch, angle_batch in val_loader:
             bs_batch, angle_batch = bs_batch.to(device), angle_batch.to(device)
-            pred_lower = model(bs_batch)
-            full_pred = fill_full_angle(pred_lower)
-            recon_bs = forward_model(full_pred)[:, lower_bs_idx]
+            pred_upper = model(bs_batch)
+            full_pred = fill_full_angle(pred_upper)
+            recon_bs = forward_model(full_pred)[:, upper_bs_idx]
             loss_cycle = criterion_cycle(recon_bs, bs_batch)
             val_loss_total += loss_cycle.item() * bs_batch.size(0)
     val_loss_total /= len(val_loader.dataset)
-
+    
     scheduler.step(val_loss_total)
-
+    
     if (epoch+1) % 20 == 0:
         print(f"Epoch {epoch+1:3d} | Train Loss: {train_loss_total:.6f} | Val Cycle Loss: {val_loss_total:.6f}")
-
+    
     if val_loss_total < best_val_loss:
         best_val_loss = val_loss_total
         best_state = model.state_dict().copy()
@@ -214,13 +205,13 @@ for epoch in range(num_epochs):
 model.load_state_dict(best_state)
 model.eval()
 test_loss = 0.0
-test_loader = DataLoader(LowerFaceDataset(X_test, Y_test), batch_size=batch_size)
+test_loader = DataLoader(UpperFaceDataset(X_test, Y_test), batch_size=batch_size)
 with torch.no_grad():
     for bs_batch, angle_batch in test_loader:
         bs_batch = bs_batch.to(device)
-        pred_lower = model(bs_batch)
-        full_pred = fill_full_angle(pred_lower)
-        recon_bs = forward_model(full_pred)[:, lower_bs_idx]
+        pred_upper = model(bs_batch)
+        full_pred = fill_full_angle(pred_upper)
+        recon_bs = forward_model(full_pred)[:, upper_bs_idx]
         test_loss += criterion_cycle(recon_bs, bs_batch).item() * bs_batch.size(0)
 test_loss /= len(X_test)
 print(f"测试循环损失: {test_loss:.6f}")
@@ -228,12 +219,13 @@ print(f"测试循环损失: {test_loss:.6f}")
 # 保存模型
 torch.save({
     'model_state_dict': best_state,
-    'lower_bs_idx': lower_bs_idx,
-    'lower_motor_ids': LOWER_MOTOR_IDS,
-    'lower_motor_idx': lower_motor_idx,
+    'upper_bs_keys': UPPER_BS_KEYS,
+    'upper_bs_idx': upper_bs_idx,
+    'upper_motor_ids': UPPER_MOTOR_IDS,
+    'upper_motor_idx': upper_motor_idx,
     'motor_ranges': motor_ranges,
-    'used_motors_full': used_motors_full,
-    'input_dim': len(lower_bs_idx),
-    'output_dim': len(lower_motor_idx),
-}, os.path.join(BASE_DIR, '..', 'models', 'lower_face_bs2angle.pth'))
-print("下半脸模型已保存为 lower_face_bs2angle.pth")
+    'used_motors_full': used_motors_full,   # 用于测试时填充完整角度
+    'input_dim': len(upper_bs_idx),
+    'output_dim': len(upper_motor_idx),
+}, os.path.join(BASE_DIR, '..', 'models', 'upper_face_bs2angle.pth'))
+print("上半脸模型已保存为 upper_face_bs2angle.pth")

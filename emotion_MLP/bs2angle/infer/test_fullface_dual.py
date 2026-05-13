@@ -36,7 +36,7 @@ RPI_PORT = 8888
 UPPER_MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "upper_face_bs2angle.pth")
 LOWER_MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "lower_face_bs2angle.pth")
 FORWARD_MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "angle2bs_full.pth")
-LANDMARKER_MODEL = os.path.join(BASE_DIR, "..", "face_landmarker.task")
+LANDMARKER_MODEL = os.path.join(BASE_DIR, "..", "..", "face_landmarker.task")
 
 
 # ================= 模型结构（双模型共用） =================

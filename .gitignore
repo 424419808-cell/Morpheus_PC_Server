@@ -17,8 +17,12 @@ build/
 Thumbs.db
 
 # Blender 渲染输出
-blender_test/output/
-blender_test/temp/
+blender_test
+
+# 共情模型验证渲染输出
+emotion_MLP/exp_bs/val/output/
+emotion_MLP/exp_bs/val/temp/
+emotion_MLP/exp_bs/val/render_output/
 
 # Claude Code 缓存配置
 .claude/
@@ -28,3 +32,6 @@ data_cleaner_progress.json
 
 # 预训练模型（LBPH 人脸识别模型，166MB 超过 GitHub 100MB 限制，可从 dataset/ 重新生成）
 emotion_MLP/vision/model.yml
+
+# 本地诊断脚本（不上传）
+blender_test/debug/

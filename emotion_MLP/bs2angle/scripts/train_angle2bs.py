@@ -45,7 +45,7 @@ def normalize_motor(value, motor_id):
     return (value - minv) / (maxv - minv)
 
 # ==================== 2. 加载 JSON，自动提取实际出现的电机 ID 和 blendshape 键 ====================
-json_path = os.path.join(BASE_DIR, '..', 'data', 'motor_babbling_data_PC.json')
+json_path = os.path.join(BASE_DIR, '..', '..', 'data_coll', 'raw_data', 'motor_babbling_data_PC.json')
 with open(json_path, 'r') as f:
     raw_data = json.load(f)
 

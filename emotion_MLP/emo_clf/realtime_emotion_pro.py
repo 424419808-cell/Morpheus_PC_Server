@@ -10,9 +10,8 @@ import socket  # 新增：用于端口通信
 
 # --- 配置 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(BASE_DIR)
-MODEL_PATH = os.path.join(ROOT_DIR, "models", "emotion_model.pkl")
-FACE_TASK = os.path.join(ROOT_DIR, "face_landmarker.task")
+MODEL_PATH = os.path.join(BASE_DIR, "models", "emotion_model.pkl")
+FACE_TASK = os.path.join(BASE_DIR, "..", "face_landmarker.task")
 GEMMA_IP = "127.0.0.1"  # 如果在同一台机器或WSL，请根据实际调整
 GEMMA_PORT = 5007       # 预留的 UDP 端口
 

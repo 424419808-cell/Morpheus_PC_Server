@@ -32,7 +32,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 MODEL_PATH = os.path.join(ROOT_DIR, "face_landmarker.task")
 LBPH_MODEL = os.path.join(BASE_DIR, "model.yml")
 NAMES_PKL = os.path.join(ROOT_DIR, "names.pkl")
-EMOTION_MODEL_PATH = os.path.join(ROOT_DIR, "models", "emotion_model.pkl")
+EMOTION_MODEL_PATH = os.path.join(ROOT_DIR, "emo_clf", "models", "emotion_model.pkl")
 
 SIO_UDP_CONNRESET = 0x98000001
 

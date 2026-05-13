@@ -30,6 +30,7 @@ import torch.nn as nn
 
 # ================= 配置 =================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJ_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
 
 RPI_IP = "172.16.0.166"
 RPI_PORT = 8888
@@ -37,11 +38,10 @@ UDP_LISTEN_PORT = 5009
 FPS = 60
 TICK = 1.0 / FPS
 
-MODELS_DIR = os.path.join(BASE_DIR, "models")
-EMOTION_BRAIN_PATH = os.path.join(MODELS_DIR, "emotion_brain.pth")
-FORWARD_MODEL_PATH = os.path.join(MODELS_DIR, "angle2bs_full.pth")
-UPPER_MODEL_PATH = os.path.join(MODELS_DIR, "upper_face_bs2angle.pth")
-LOWER_MODEL_PATH = os.path.join(MODELS_DIR, "lower_face_bs2angle.pth")
+EMOTION_BRAIN_PATH = os.path.join(PROJ_ROOT, "exp_bs", "models", "emotion_brain.pth")
+FORWARD_MODEL_PATH = os.path.join(PROJ_ROOT, "bs2angle", "models", "angle2bs_full.pth")
+UPPER_MODEL_PATH = os.path.join(PROJ_ROOT, "bs2angle", "models", "upper_face_bs2angle.pth")
+LOWER_MODEL_PATH = os.path.join(PROJ_ROOT, "bs2angle", "models", "lower_face_bs2angle.pth")
 
 # 19 种情绪（与 train_brain.py / gen_batch_data.py 保持一致）
 EMOTIONS = [

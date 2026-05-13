@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 # ================= 核心配置区 =================
 IMAGE_SAVE_DIR = r"I:\captured_faces"
-DATA_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "motor_babbling_data_PC.json")
+DATA_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data_coll", "raw_data", "motor_babbling_data_PC.json")
 TARGET_VALID_SAMPLES = 11000
 # ==============================================
 

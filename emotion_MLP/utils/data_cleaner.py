@@ -6,8 +6,8 @@ import cv2
 # ================= 配置区 =================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DATA_JSON_PATH = os.path.join(BASE_DIR, "..", "data", "motor_babbling_data_PC.json")
-CLEAN_JSON_PATH = os.path.join(BASE_DIR, "..", "data", "motor_babbling_data_clean.json")
+DATA_JSON_PATH = os.path.join(BASE_DIR, "..", "data_coll", "raw_data", "motor_babbling_data_PC.json")
+CLEAN_JSON_PATH = os.path.join(BASE_DIR, "..", "data_coll", "raw_data", "motor_babbling_data_clean.json")
 PROGRESS_PATH = os.path.join(BASE_DIR, "..", "data", "data_cleaner_progress.json")
 
 IMAGE_DIR = r"I:\captured_faces"

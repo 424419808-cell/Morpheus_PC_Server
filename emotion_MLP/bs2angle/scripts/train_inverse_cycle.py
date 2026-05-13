@@ -60,7 +60,7 @@ for param in forward_model.parameters():
 print(f"正向模型加载成功，电机数量: {checkpoint['input_dim']}, blendshape 数量: {checkpoint['output_dim']}")
 
 # ==================== 3. 加载数据 ====================
-json_path = os.path.join(BASE_DIR, '..', 'data', 'motor_babbling_data_PC.json')
+json_path = os.path.join(BASE_DIR, '..', '..', 'data_coll', 'raw_data', 'motor_babbling_data_PC.json')
 with open(json_path, 'r') as f:
     raw_data = json.load(f)
 

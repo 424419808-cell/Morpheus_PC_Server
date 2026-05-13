@@ -36,8 +36,9 @@ def generate_multi_transition(indices):
     emotions = ["Neutral", "Happy", "Excitement", "Humor", "Pride", "Trust", "Love", "Relief", "Hope", "Anger", "Disgust", "Fear", "Vigilance", "Sad", "Loneliness", "Guilt", "Surprise", "Confusion", "Shyness"]
     
     # 加载模型
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     model = EmotionBrain()
-    model.load_state_dict(torch.load("models/emotion_brain.pth"))
+    model.load_state_dict(torch.load(os.path.join(BASE_DIR, "..", "exp_bs", "models", "emotion_brain.pth")))
     model.eval()
 
     def get_vec(idx):

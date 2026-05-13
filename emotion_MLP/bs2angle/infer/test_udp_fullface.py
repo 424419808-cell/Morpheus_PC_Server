@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """
-WSL 端：实时下半脸推理 + UDP 发送（不按空格，连续驱动）
+WSL 端：上脸MLP + 下脸MLP 实时推理 + UDP 发送（不按空格，连续驱动全脸舵机）
 """
 
 import os
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-
-import torch
-import torch.nn as nn
 import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -15,19 +11,39 @@ from mediapipe.tasks.python import vision
 import time
 import json
 import socket
+import torch
+import torch.nn as nn
 from collections import deque
 
 # ================= 配置 =================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 本地摄像头用整数索引（0=默认摄像头），网络流用 URL 字符串
-VIDEO_SOURCE = 1  # 如果还是 ivcam，试试 2 或 3
+ROOT_DIR = os.path.dirname(BASE_DIR)
+PROJ_ROOT = os.path.dirname(ROOT_DIR)
+VIDEO_STREAM_URL = "http://172.16.1.57:5000/video_feed"
 RPI_IP = "172.16.0.166"
 RPI_PORT = 8888
-MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "lower_face_bs2angle.pth")
-FORWARD_MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "angle2bs_full.pth")
-LANDMARKER_MODEL = os.path.join(BASE_DIR, "..", "face_landmarker.task")
+UPPER_MODEL_PATH = os.path.join(ROOT_DIR, "models", "upper_face_bs2angle.pth")
+LOWER_MODEL_PATH = os.path.join(ROOT_DIR, "models", "lower_face_bs2angle.pth")
+FORWARD_MODEL_PATH = os.path.join(ROOT_DIR, "models", "angle2bs_full.pth")
+LANDMARKER_MODEL = os.path.join(PROJ_ROOT, "face_landmarker.task")
 
 # ================= 模型结构定义 =================
+class UpperFaceBS2Angle(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dims=[256, 128, 64]):
+        super().__init__()
+        layers = []
+        prev = input_dim
+        for h in hidden_dims:
+            layers.append(nn.Linear(prev, h))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(0.2))
+            prev = h
+        layers.append(nn.Linear(prev, output_dim))
+        layers.append(nn.Sigmoid())
+        self.net = nn.Sequential(*layers)
+    def forward(self, x):
+        return self.net(x)
+
 class LowerFaceBS2Angle(nn.Module):
     def __init__(self, input_dim, output_dim, hidden_dims=[256, 128, 64]):
         super().__init__()
@@ -47,52 +63,43 @@ class LowerFaceBS2Angle(nn.Module):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🔥 使用设备: {device}")
 
-# ================= 加载模型 =================
-# 加载下半脸反向模型
-checkpoint = torch.load(MODEL_PATH, map_location=device)
-lower_motor_ids = checkpoint['lower_motor_ids']
-motor_ranges = checkpoint['motor_ranges']
-used_motors_full = checkpoint['used_motors_full']
+# ================= 加载上半脸模型 =================
+upper_ckpt = torch.load(UPPER_MODEL_PATH, map_location=device)
+upper_bs_keys = upper_ckpt['upper_bs_keys']
+upper_motor_ids = upper_ckpt['upper_motor_ids']
+motor_ranges = upper_ckpt['motor_ranges']
+used_motors_full = upper_ckpt['used_motors_full']
 
-# 从正向模型获取 full bs_keys，再通过 lower_bs_idx 还原下半脸 BS 键名
+upper_model = UpperFaceBS2Angle(
+    input_dim=len(upper_bs_keys),
+    output_dim=len(upper_motor_ids)
+).to(device)
+upper_model.load_state_dict(upper_ckpt['model_state_dict'])
+upper_model.eval()
+print(f"✅ 上半脸模型加载成功，BS: {len(upper_bs_keys)}, 舵机: {upper_motor_ids}")
+
+# ================= 加载下半脸模型 =================
+lower_ckpt = torch.load(LOWER_MODEL_PATH, map_location=device)
+lower_motor_ids = lower_ckpt['lower_motor_ids']
+
 forward_ckpt = torch.load(FORWARD_MODEL_PATH, map_location=device)
 bs_keys_full = forward_ckpt['bs_keys']
-lower_bs_idx = checkpoint['lower_bs_idx']
+lower_bs_idx = lower_ckpt['lower_bs_idx']
 lower_bs_keys = [bs_keys_full[i] for i in lower_bs_idx]
 
-model = LowerFaceBS2Angle(
+lower_model = LowerFaceBS2Angle(
     input_dim=len(lower_bs_keys),
     output_dim=len(lower_motor_ids)
 ).to(device)
-model.load_state_dict(checkpoint['model_state_dict'])
-model.eval()
-print(f"✅ 下半脸模型加载成功，BS 数量: {len(lower_bs_keys)}, 输出舵机: {lower_motor_ids}")
-
-# ================= 舵机安全限幅表 (从中提取默认角度) =================
-TABLE_V_CONFIG = {
-    0:  (0.0,   90.0,  90.0),   1:  (27.0,  100.0, 100.0),  2:  (70.0,  105.0, 105.0),
-    3:  (70.0,  100.0,  100.0), 4:  (20.0,  120.0, 30.0),   5:  (70.0,  100.0, 70.0),
-    6:  (30.0,  110.0,  60.0),  7:  (54.0,  90.0,  90.0),   8:  (45.0,  135.0, 90.0),
-    9:  (80.0,  90.0,  90.0),   10: (70.0,  90.0, 70.0),    11: (70.0,  100.0, 70.0),
-    12: (90.0,  140.0, 135.0),  13: (45.0,  135.0, 90.0),   14: (110.0, 180.0, 180.0),
-    15: (60.0,  105.0, 105.0),  16: (130.0, 165.0, 130.0),  17: (40.0,  90.0,  50.0),
-    18: (45.0,  135.0, 90.0),   19: (70.0,  130.0, 70.0),   20: (20.0,  62.0,  62.0),
-    21: (45.0,  135.0, 90.0),   22: (40.0,  100.0, 100.0),  23: (55.0,  95.0,  75.0),
-    24: (20.0,  50.0,  40.0),   25: (60.0,  150.0, 140.0),  26: (65.0,  100.0, 90.0),
-    27: (60.0,  110.0, 90.0),   28: (0.0,   50.0,  0.0),    29: (0.0,   90.0,  0.0),
-    30: (50.0,  165.0, 150.0),  31: (20.0,  100.0, 34.0),   32: (0,     180.0, 90)
-}
+lower_model.load_state_dict(lower_ckpt['model_state_dict'])
+lower_model.eval()
+print(f"✅ 下半脸模型加载成功，BS: {len(lower_bs_keys)}, 舵机: {lower_motor_ids}")
 
 # 中性默认角度
 default_angles = {}
 for mid in used_motors_full:
-    if mid in TABLE_V_CONFIG:
-        # 使用表中的第三个值（索引为2）作为绝对安全的中性起点
-        default_angles[str(mid)] = float(TABLE_V_CONFIG[mid][2])
-    else:
-        # 兜底逻辑：如果表中没有，再取中值
-        minv, maxv = motor_ranges[mid]
-        default_angles[str(mid)] = float((minv + maxv) / 2.0)
+    minv, maxv = motor_ranges[mid]
+    default_angles[str(mid)] = (minv + maxv) / 2.0
 
 # ================= MediaPipe 初始化 =================
 base_options = python.BaseOptions(model_asset_path=LANDMARKER_MODEL)
@@ -114,9 +121,9 @@ def denormalize_angle(norm, motor_id):
 
 # ================= 主循环 =================
 def main():
-    cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(VIDEO_STREAM_URL)
     if not cap.isOpened():
-        print(f"❌ 无法打开视频源: {VIDEO_SOURCE}")
+        print(f"❌ 无法打开视频流: {VIDEO_STREAM_URL}")
         sock.close()
         return
 
@@ -124,7 +131,7 @@ def main():
     prev_time = time.time()
     frame_timestamp_ms = 0
 
-    print("\n🎯 实时模式：无需按键，连续驱动下半脸舵机。按 Q 退出。\n")
+    print("\n🎯 实时模式：上脸MLP+下脸MLP 连续驱动全脸舵机。按 Q 退出。\n")
 
     while True:
         ret, frame = cap.read()
@@ -155,34 +162,37 @@ def main():
             cv2.putText(display_frame, "Face Detected", (10, 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            # 提取下半脸 BS 并推理
             blendshapes = detection_result.face_blendshapes[0]
             bs_dict_raw = {bs.category_name: bs.score for bs in blendshapes}
-            bs_lower_input = [bs_dict_raw.get(key, 0.0) for key in lower_bs_keys]
 
-            input_tensor = torch.tensor([bs_lower_input], dtype=torch.float32).to(device)
-            with torch.no_grad():
-                pred_lower_norm = model(input_tensor).cpu().numpy()[0]
-
-            # 构造完整角度指令
             angles_dict = default_angles.copy()
+
+            # 上半脸推理
+            bs_upper_input = [bs_dict_raw.get(key, 0.0) for key in upper_bs_keys]
+            input_upper = torch.tensor([bs_upper_input], dtype=torch.float32).to(device)
+            with torch.no_grad():
+                pred_upper_norm = upper_model(input_upper).cpu().numpy()[0]
+            for i, mid in enumerate(upper_motor_ids):
+                raw = denormalize_angle(pred_upper_norm[i], mid)
+                angles_dict[str(mid)] = round(raw, 2)
+
+            # 下半脸推理
+            bs_lower_input = [bs_dict_raw.get(key, 0.0) for key in lower_bs_keys]
+            input_lower = torch.tensor([bs_lower_input], dtype=torch.float32).to(device)
+            with torch.no_grad():
+                pred_lower_norm = lower_model(input_lower).cpu().numpy()[0]
             for i, mid in enumerate(lower_motor_ids):
                 raw = denormalize_angle(pred_lower_norm[i], mid)
-                
-                # 【修改这里：对输出进行 0.5 度的量化取整】
-                # 例如：90.1 和 90.2 都会变成 90.0；90.4 会变成 90.5
-                quantized_angle = float(round(float(raw) * 2) / 2.0)
-                
-                angles_dict[str(mid)] = quantized_angle
+                angles_dict[str(mid)] = round(raw, 2)
 
             # UDP 发送
             data = json.dumps(angles_dict) + '\n'
             sock.sendto(data.encode('utf-8'), (RPI_IP, RPI_PORT))
 
-        cv2.putText(display_frame, "Live Mode (UDP - Lower Face)", (10, 90),
+        cv2.putText(display_frame, "Live Mode (UDP - Upper+Lower MLP)", (10, 90),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
-        cv2.imshow('WSL Lower Face Realtime', display_frame)
+        cv2.imshow('WSL Full Face Realtime (Upper+Lower MLP)', display_frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
