@@ -11,27 +11,30 @@ OBSERVED_EMOTIONS = [
     "Happy", "Sad", "Angry", "Fear", "Surprise", "Disgust", "Neutral"
 ]
 
-# 19 种可表现的机器人情绪标签（与 EmotionBrain 一致）
+# 24 种可表现的机器人情绪标签（与 EmotionBrain 一致）
 ROBOT_EMOTIONS = [
     "Neutral", "Happy", "Excitement", "Humor", "Pride",
     "Trust", "Love", "Relief", "Hope",
     "Anger", "Disgust", "Fear", "Vigilance",
     "Sad", "Loneliness", "Guilt",
     "Surprise", "Confusion", "Shyness",
+    "Comfort", "Playful", "Impressed", "Concerned", "Awkward",
 ]
 
 # 共情映射矩阵：user_emotion → [(robot_emotion, weight), ...]
 # weight 表示该共情响应的相对概率
 EMPATHY_MAP = {
     "Happy": [
-        ("Happy", 0.35), ("Excitement", 0.25), ("Humor", 0.20),
-        ("Love", 0.10), ("Neutral", 0.10),
-        # 共享喜悦：积极共情，热情回应
+        ("Happy", 0.30), ("Excitement", 0.20), ("Humor", 0.15),
+        ("Playful", 0.15), ("Impressed", 0.10),
+        ("Love", 0.05), ("Neutral", 0.05),
+        # 共享喜悦：积极共情，热情回应，加入调皮和赞赏
     ],
     "Sad": [
-        ("Love", 0.30), ("Trust", 0.25), ("Neutral", 0.20),
-        ("Relief", 0.15), ("Hope", 0.10),
-        # 同情安慰：不表现悲伤，而是温暖陪伴和希望
+        ("Comfort", 0.25), ("Love", 0.20), ("Trust", 0.15),
+        ("Concerned", 0.15), ("Neutral", 0.10),
+        ("Relief", 0.08), ("Hope", 0.07),
+        # 同情安慰：用安慰/关切替代悲伤，温暖陪伴
     ],
     "Angry": [
         ("Neutral", 0.30), ("Confusion", 0.20), ("Trust", 0.20),
@@ -39,19 +42,21 @@ EMPATHY_MAP = {
         # 降级缓和：用中立、困惑、信任来降低冲突
     ],
     "Fear": [
-        ("Trust", 0.30), ("Love", 0.20), ("Relief", 0.20),
-        ("Neutral", 0.20), ("Hope", 0.10),
-        # 安抚信赖：表达可靠、安全、安抚
+        ("Trust", 0.25), ("Comfort", 0.20), ("Love", 0.15),
+        ("Concerned", 0.15), ("Relief", 0.10),
+        ("Neutral", 0.10), ("Hope", 0.05),
+        # 安抚信赖：表达可靠、安全、安抚，加入关切和安慰
     ],
     "Surprise": [
-        ("Surprise", 0.30), ("Confusion", 0.20), ("Humor", 0.20),
-        ("Excitement", 0.20), ("Neutral", 0.10),
-        # 共情惊讶：共享惊讶情绪，转向好奇或幽默
+        ("Surprise", 0.20), ("Impressed", 0.20), ("Confusion", 0.15),
+        ("Humor", 0.15), ("Excitement", 0.10),
+        ("Awkward", 0.10), ("Neutral", 0.10),
+        # 共情惊讶：共享惊讶，转向赞赏/好奇/幽默
     ],
     "Disgust": [
-        ("Neutral", 0.35), ("Confusion", 0.25), ("Vigilance", 0.20),
-        ("Sad", 0.10), ("Trust", 0.10),
-        # 中立好奇：不表现厌恶，用困惑和中立回应
+        ("Neutral", 0.25), ("Confusion", 0.20), ("Awkward", 0.15),
+        ("Vigilance", 0.15), ("Sad", 0.10), ("Trust", 0.10), ("Concerned", 0.05),
+        # 中立好奇：不表现厌恶，用困惑/尴尬和中立回应
     ],
     "Neutral": [
         ("Neutral", 0.40), ("Happy", 0.25), ("Trust", 0.20),
@@ -67,6 +72,7 @@ EMOTION_IDS = {
     "Anger": 9, "Disgust": 10, "Fear": 11, "Vigilance": 12,
     "Sad": 13, "Loneliness": 14, "Guilt": 15,
     "Surprise": 16, "Confusion": 17, "Shyness": 18,
+    "Comfort": 19, "Playful": 20, "Impressed": 21, "Concerned": 22, "Awkward": 23,
 }
 
 

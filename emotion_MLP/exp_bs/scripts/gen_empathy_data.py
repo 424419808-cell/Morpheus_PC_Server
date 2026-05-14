@@ -34,7 +34,7 @@ def generate_empathy_data(
         neutral_ratio: 中性样本占总数据的比例
     """
     if intensities is None:
-        intensities = [0.2, 0.4, 0.6, 0.8, 1.0]
+        intensities = [0.7, 0.85, 1.0]  # 去掉弱强度，让模型看到完整表情
     if noise_levels is None:
         noise_levels = [0.01, 0.02, 0.05]
 
@@ -50,7 +50,9 @@ def generate_empathy_data(
             base_tgt_bs = get_base_bs(tgt_emo)
 
             for alpha in intensities:
-                target_bs = base_tgt_bs * alpha
+                # 随机缩放 + 微小随机扰动，保持信号强度
+                scale = alpha * np.random.uniform(0.8, 1.0)
+                target_bs = np.clip(base_tgt_bs * scale, 0, 1)
 
                 for noise_std in noise_levels:
                     for _ in range(variants_per_noise):

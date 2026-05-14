@@ -31,6 +31,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 WSL_IP = "172.20.195.170"
 UDP_PORT = 5006
 GEMMA_VOICE_PORT = 5008
+EMOTION_COPROCESSOR_PORT = 5012
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 4
@@ -117,15 +118,8 @@ class Morpheus_Ear_System:
         print("[Morpheus Ear] CAM++ 声纹模型加载完成。")
 
         print("[Morpheus Ear] 加载 Silero VAD...")
-        self.vad_model, vad_utils = torch.hub.load(
-            repo_or_dir='snakers4/silero-vad',
-            model='silero_vad',
-            force_reload=False,
-            onnx=False,
-        )
-        (self._vad_get_timestamps, self._vad_save_audio,
-         self._vad_read_audio, self._VADIterator,
-         self._vad_collect_chunks) = vad_utils
+        from silero_vad import load_silero_vad
+        self.vad_model = load_silero_vad()
         print("[Morpheus Ear] Silero VAD 加载完成。")
 
         # --- 声纹嵌入缓存 ---
@@ -476,10 +470,12 @@ class Morpheus_Ear_System:
                     print(f"[验证失败] 声纹不匹配 (置信度: {confidence:.2f})")
             else:
                 print(">>> 声纹识别未返回结果")
-        elif self.is_visual_running and len(text) > 1:
+        if len(text) > 1:
             print(f"\n[对话转发]: {text}")
             self.sock.sendto(text.encode(), ("127.0.0.1", GEMMA_VOICE_PORT))
-            self.sock.sendto(f"DIR:{self.last_h_val}:{self.last_v_val}".encode(), (WSL_IP, UDP_PORT))
+            self.sock.sendto(text.encode(), ("127.0.0.1", EMOTION_COPROCESSOR_PORT))
+            if self.is_visual_running:
+                self.sock.sendto(f"DIR:{self.last_h_val}:{self.last_v_val}".encode(), (WSL_IP, UDP_PORT))
 
     # ================= 主采集循环 =================
     def _capture_loop(self):

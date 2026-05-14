@@ -6,7 +6,7 @@ import os
 from gen_batch_data import get_base_bs
 
 class EmotionBrain(nn.Module):
-    def __init__(self, input_dim=19, output_dim=52):
+    def __init__(self, input_dim=24, output_dim=52):
         super(EmotionBrain, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 128),
@@ -19,7 +19,7 @@ class EmotionBrain(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-emotions = ["Neutral", "Happy", "Excitement", "Humor", "Pride", "Trust", "Love", "Relief", "Hope", "Anger", "Disgust", "Fear", "Vigilance", "Sad", "Loneliness", "Guilt", "Surprise", "Confusion", "Shyness"]
+emotions = ["Neutral", "Happy", "Excitement", "Humor", "Pride", "Trust", "Love", "Relief", "Hope", "Anger", "Disgust", "Fear", "Vigilance", "Sad", "Loneliness", "Guilt", "Surprise", "Confusion", "Shyness", "Comfort", "Playful", "Impressed", "Concerned", "Awkward"]
 
 print(">>> 正在生成带噪声的增强数据...")
 x_train, y_train = [], []

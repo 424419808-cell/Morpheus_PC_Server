@@ -35,3 +35,21 @@ emotion_MLP/vision/model.yml
 
 # 本地诊断脚本（不上传）
 blender_test/debug/
+
+# 训练生成数据（可由脚本重新生成）
+emotion_MLP/data/*.npz
+
+# 原始采集数据
+emotion_MLP/data_coll/raw_data/
+
+# 说话人音频样本（含个人声音数据）
+emotion_MLP/speaker_samples/
+
+# 视觉训练数据集（含个人面部数据）
+emotion_MLP/vision/dataset/
+
+# 重复模型文件
+emotion_MLP/bs2angle/models/lower_face_bs2angle1.pth
+
+# 临时测试脚本
+tmprk_hw_test.py

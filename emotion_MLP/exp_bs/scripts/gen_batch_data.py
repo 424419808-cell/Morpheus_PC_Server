@@ -74,11 +74,12 @@ def get_base_bs(emotion):
         bs[SERVO_IDX["jawOpen"]] = 0.3              # bs[24]
 
     elif emotion == "Humor":
-        bs[SERVO_IDX["mouthSmileRight"]] = 1.0      # bs[44]
-        bs[SERVO_IDX["mouthDimpleRight"]] = 0.8     # bs[28]
-        bs[SERVO_IDX["eyeSquintRight"]] = 0.5       # bs[19]
-        bs[SERVO_IDX["mouthRight"]] = 0.6           # bs[38]
+        bs[SERVO_IDX["mouthSmileRight"]] = 0.7      # bs[44] 减弱（原1.0太夸张）
+        bs[SERVO_IDX["mouthSmileLeft"]] = 0.3       # bs[43] 增加少许左侧平衡
+        bs[SERVO_IDX["mouthDimpleRight"]] = 0.6     # bs[28]
+        bs[SERVO_IDX["eyeSquintRight"]] = 0.6       # bs[19]
         bs[SERVO_IDX["browOuterUpRight"]] = 0.5     # bs[4]
+        bs[SERVO_IDX["mouthRight"]] = 0.3           # bs[38] 减弱
 
     elif emotion == "Pride":
         bs[SERVO_IDX["mouthSmileLeft"]] = 0.3       # bs[43]
@@ -207,6 +208,48 @@ def get_base_bs(emotion):
         bs[SERVO_IDX["eyeLookOutRight"]] = 0.5      # bs[15]
         bs[SERVO_IDX["mouthSmileLeft"]] = 0.2       # bs[43]
         bs[SERVO_IDX["mouthSmileRight"]] = 0.2      # bs[44]
+
+    elif emotion == "Comfort":
+        bs[SERVO_IDX["mouthSmileLeft"]] = 0.6       # bs[43] 温和微笑
+        bs[SERVO_IDX["mouthSmileRight"]] = 0.6      # bs[44]
+        bs[SERVO_IDX["eyeSquintLeft"]] = 0.5        # bs[18] 温柔眼神
+        bs[SERVO_IDX["eyeSquintRight"]] = 0.5       # bs[19]
+        bs[SERVO_IDX["browInnerUp"]] = 0.3          # bs[2]  关切抬眉
+        # 区别于 Relief：没有 eyeBlink(8,9)+mouthFunnel(31) 的叹气感
+
+    elif emotion == "Playful":
+        bs[SERVO_IDX["mouthSmileRight"]] = 1.0      # bs[44] 不对称坏笑
+        bs[SERVO_IDX["mouthSmileLeft"]] = 0.3       # bs[43]
+        bs[SERVO_IDX["browOuterUpRight"]] = 0.8     # bs[4]  右眉挑起
+        bs[SERVO_IDX["eyeSquintRight"]] = 0.6       # bs[19] 右眼眯起
+        bs[SERVO_IDX["mouthRight"]] = 0.4           # bs[38] 嘴角右偏
+
+    elif emotion == "Impressed":
+        bs[SERVO_IDX["browOuterUpLeft"]] = 0.8      # bs[3]  眉毛上扬
+        bs[SERVO_IDX["browOuterUpRight"]] = 0.8     # bs[4]
+        bs[SERVO_IDX["browInnerUp"]] = 0.6          # bs[2]  抬眉
+        bs[SERVO_IDX["eyeWideLeft"]] = 0.5          # bs[20] 眼睛睁大
+        bs[SERVO_IDX["eyeWideRight"]] = 0.5         # bs[21]
+        bs[SERVO_IDX["mouthSmileLeft"]] = 0.5       # bs[43] 赞赏微笑
+        bs[SERVO_IDX["mouthSmileRight"]] = 0.5      # bs[44]
+        bs[SERVO_IDX["jawOpen"]] = 0.2              # bs[24] 微微张嘴
+
+    elif emotion == "Concerned":
+        bs[SERVO_IDX["browInnerUp"]] = 0.7          # bs[2]  关切抬眉
+        bs[SERVO_IDX["browDownLeft"]] = 0.4         # bs[0]  轻微皱眉
+        bs[SERVO_IDX["browDownRight"]] = 0.4        # bs[1]
+        bs[SERVO_IDX["eyeSquintLeft"]] = 0.5        # bs[18] 专注凝视
+        bs[SERVO_IDX["eyeSquintRight"]] = 0.5       # bs[19]
+        bs[SERVO_IDX["mouthFrownLeft"]] = 0.3       # bs[29] 嘴角微垂
+        bs[SERVO_IDX["mouthFrownRight"]] = 0.3      # bs[30]
+
+    elif emotion == "Awkward":
+        bs[SERVO_IDX["mouthSmileRight"]] = 0.7      # bs[44] 不对称尬笑
+        bs[SERVO_IDX["mouthSmileLeft"]] = 0.2       # bs[43]
+        bs[SERVO_IDX["eyeSquintRight"]] = 0.4       # bs[19]
+        bs[SERVO_IDX["eyeLookOutLeft"]] = 0.6       # bs[14] 视线躲闪
+        bs[SERVO_IDX["eyeLookOutRight"]] = 0.6      # bs[15]
+        bs[SERVO_IDX["mouthDimpleRight"]] = 0.5     # bs[28] 酒窝尬笑
 
     return bs
 

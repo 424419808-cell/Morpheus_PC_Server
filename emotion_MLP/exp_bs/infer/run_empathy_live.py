@@ -31,6 +31,7 @@ EMOTIONS = [
     "Anger", "Disgust", "Fear", "Vigilance",
     "Sad", "Loneliness", "Guilt",
     "Surprise", "Confusion", "Shyness",
+    "Comfort", "Playful", "Impressed", "Concerned", "Awkward",
 ]
 
 # 共情映射（用于参考）

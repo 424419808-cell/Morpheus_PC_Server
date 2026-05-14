@@ -43,20 +43,21 @@ FORWARD_MODEL_PATH = os.path.join(PROJ_ROOT, "bs2angle", "models", "angle2bs_ful
 UPPER_MODEL_PATH = os.path.join(PROJ_ROOT, "bs2angle", "models", "upper_face_bs2angle.pth")
 LOWER_MODEL_PATH = os.path.join(PROJ_ROOT, "bs2angle", "models", "lower_face_bs2angle.pth")
 
-# 19 种情绪（与 train_brain.py / gen_batch_data.py 保持一致）
+# 24 种情绪（与 train_brain.py / gen_batch_data.py 保持一致）
 EMOTIONS = [
     "Neutral", "Happy", "Excitement", "Humor", "Pride",
     "Trust", "Love", "Relief", "Hope",
     "Anger", "Disgust", "Fear", "Vigilance",
     "Sad", "Loneliness", "Guilt",
     "Surprise", "Confusion", "Shyness",
+    "Comfort", "Playful", "Impressed", "Concerned", "Awkward",
 ]
 
 
 # ================= 模型结构 =================
 class EmotionBrain(nn.Module):
-    """19 维 one-hot → 52 维 BS（ARKit 顺序）"""
-    def __init__(self, input_dim=19, output_dim=52):
+    """24 维 one-hot → 52 维 BS（ARKit 顺序）"""
+    def __init__(self, input_dim=24, output_dim=52):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 128), nn.ReLU(),
@@ -164,7 +165,7 @@ def load_models(device):
 # ================= 核心函数 =================
 def emotion_to_bs(emotion_id, model, device):
     """情绪 ID → 52-dim BS (ARKit 顺序)"""
-    one_hot = torch.zeros(1, 19, device=device)
+    one_hot = torch.zeros(1, 24, device=device)
     one_hot[0, emotion_id] = 1.0
     with torch.no_grad():
         bs = model(one_hot).cpu().numpy()[0]  # (52,)
@@ -299,7 +300,7 @@ class UDPListener:
 def main():
     parser = argparse.ArgumentParser(description="情绪标签 → 面部舵机角度 → UDP")
     parser.add_argument("emotions", type=int, nargs="*", default=None,
-                        help="情绪序号（0-18），多个则循环播放")
+                        help="情绪序号（0-23），多个则循环播放")
     parser.add_argument("--listen", action="store_true",
                         help="UDP 监听模式，接收 deepseek 的情绪 ID")
     parser.add_argument("--no-udp", action="store_true",
