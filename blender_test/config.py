@@ -43,6 +43,14 @@ RENDER_ENGINE = "CYCLES"  # CYCLES 纯 CPU 渲染，无头模式下贴图正常
 CYCLES_SAMPLES = 64
 
 # ============================================================
+# 实时渲染参数（用于 run_empathy_live.py --blender-render）
+# ============================================================
+LIVE_RENDER_PORT = 9010
+LIVE_OUTPUT_DIR = os.path.join(BASE_DIR, "live_output")
+LIVE_RENDER_ENGINE = "BLENDER_EEVEE"  # BLENDER_EEVEE 或 CYCLES
+LIVE_CYCLES_SAMPLES = 8               # Cycles 实时渲染采样数
+
+# ============================================================
 # 52 个 Apple ARKit blendshape 名称（与 JSON 中的 key 完全一致）
 # ============================================================
 ARKIT_BLENDSHAPE_NAMES = [

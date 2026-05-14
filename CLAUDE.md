@@ -189,6 +189,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 - RK3588 servo limits are defined in `TABLE_V_CONFIG` in both `pi_servo_udp.py` and `set_start_bound.py` — must stay in sync
 - `test_emotion_to_face.py` 中 `RPI_IP` 常量应指向 RK3588 的实际 IP
 - `blender_test/config.py` must set `BLENDER_EXE` and `REFERENCE_IMAGE_DIR` before use
+- 摄像头 ID：`cam=0` 为 iVCam（手机摄像头），`cam=1` 为电脑自带摄像头。无特殊要求时默认使用电脑摄像头（`cam=1`）
 
 ## Development Workflow
 
@@ -229,3 +230,10 @@ python -c "import torch; print(torch.cuda.is_available())"
 - RK3588 (ARM Linux 5.10) with I2C enabled, 3× PCA9685 boards at addresses 0x40/0x41/0x42 on I2C bus 4
 - 33 servos total (0-15 on 0x40, 16-31 on 0x41, channel 32 on 0x42)
 - External servo power supply required
+
+## RK3588 远程连接
+
+```bash
+ssh elf@<RK3588_IP> -p 2222
+# 密码: elf
+```

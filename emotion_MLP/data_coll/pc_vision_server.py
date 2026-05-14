@@ -30,7 +30,7 @@ if os.path.exists(DATA_JSON_PATH):
 else:
     print("未检测到历史数据，将开启全新采集任务。")
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)  # 默认电脑摄像头
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 

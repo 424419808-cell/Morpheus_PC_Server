@@ -1,17 +1,36 @@
-# SenseVoice 本地语音识别服务
-# 替代 xunfei_ear_realtime.py，使用本地 SenseVoice + CAM++ 声纹
+# DashScope 在线语音识别服务
+# 替代 xunfei_ear_realtime.py，使用 DashScope Paraformer + CAM++ 声纹
+#
+# ========== 运行示例 ==========
+# 1) 列出音频设备:
+#    python emotion_MLP/audio/sensevoice_ear_realtime.py --list-devices
+#
+# 2) 使用指定麦克风启动(推荐):
+#    python emotion_MLP/audio/sensevoice_ear_realtime.py --input-device 2
+#
+# 3) 使用默认设备启动:
+#    python emotion_MLP/audio/sensevoice_ear_realtime.py
+#
+# 注意: 如果 conda activate 有问题, 用以下方式替代:
+#    conda run -p H:\APP\conda\envs\emotion_mlp python emotion_MLP/audio/sensevoice_ear_realtime.py --input-device 2
+# =============================
 import argparse
 import os
 import pickle
 import queue
 import socket
+import sys
 import threading
 import time
 from collections import deque
 
 import numpy as np
 import pyaudio
+import tempfile
 import torch
+from dashscope.audio.asr import Recognition
+from dashscope.audio.asr.recognition import RecognitionCallback
+from funasr import AutoModel
 from scipy.signal import butter, correlate, istft, lfilter, resample, stft
 
 # ===== AEC 条件导入 =====
@@ -22,9 +41,6 @@ except ImportError:
     HAS_AEC = False
     print("[WARN] aec_audio_processing 未找到，AEC 已禁用。继续运行但无回声消除。")
 
-# ===== FunASR 模型 =====
-from funasr import AutoModel
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # ================= 1. 网络与音频配置 =================
@@ -32,12 +48,16 @@ WSL_IP = "172.20.195.170"
 UDP_PORT = 5006
 GEMMA_VOICE_PORT = 5008
 EMOTION_COPROCESSOR_PORT = 5012
+LOCK_PORT = 5005               # 单例锁定端口（防止重复启动）
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 4
 RATE = 16000
 CHUNK = 1280          # 80ms
 SUBFRAME = 160        # 10ms for AEC
+
+# --- DashScope 配置 ---
+DASHSCOPE_API_KEY = "sk-0cf953e4c6c34f7089ffd6f7335235c1"
 
 # --- 声源定位参数 ---
 UPSAMPLE_FACTOR = 10
@@ -87,11 +107,18 @@ def residual_suppression(sig, fs, alpha=2.0, beta=0.01):
 
 
 # ================= 3. Morpheus_Ear_System =================
+
+class _DummyCB(RecognitionCallback):
+    """DashScope Recognition 需要的占位回调"""
+    pass
+
+
 class Morpheus_Ear_System:
-    def __init__(self, device_str="auto"):
+    def __init__(self, device_str="auto", input_device_idx=None):
         self.exit_flag = False
         self.is_visual_running = False
         self.current_vip_id = None
+        self.input_device_idx = input_device_idx
 
         # --- 设备 ---
         if device_str == "auto":
@@ -101,13 +128,16 @@ class Morpheus_Ear_System:
         print(f"[Morpheus Ear] 推理设备: {self.device}")
 
         # --- 加载模型 ---
-        print("[Morpheus Ear] 加载 SenseVoice 模型...")
-        self.asr_model = AutoModel(
-            model="iic/SenseVoiceSmall",
-            disable_pbar=True,
-            device=self.device,
+        print("[Morpheus Ear] 初始化 DashScope ASR (Paraformer)...")
+        import dashscope
+        dashscope.api_key = DASHSCOPE_API_KEY
+        self._asr_recognizer = Recognition(
+            model='paraformer-realtime-v2',
+            callback=_DummyCB(),
+            format='pcm',
+            sample_rate=RATE,
         )
-        print("[Morpheus Ear] SenseVoice 模型加载完成。")
+        print("[Morpheus Ear] DashScope ASR 初始化完成。")
 
         print("[Morpheus Ear] 加载 CAM++ 声纹模型...")
         self.sv_model = AutoModel(
@@ -140,6 +170,13 @@ class Morpheus_Ear_System:
         # --- 声源定位历史 ---
         self.voice_history_h = deque(maxlen=WINDOW_SIZE)
         self.voice_history_v = deque(maxlen=WINDOW_SIZE)
+
+        # --- 性能优化: 帧计数降频 ---
+        self._frame_counter = 0
+        self._vad_interval = 4       # 每 4 chunks 跑一次 VAD (~320ms)
+        self._localize_interval = 3  # 每 3 chunks 定位一次 (~240ms)
+        # 动态计算 VAD 降频后的静音超时阈值（保持约 500ms）
+        self._silence_timeout_chunks = max(1, int(SILENCE_TIMEOUT / (self._vad_interval * CHUNK / RATE)))
 
         # --- VAD 状态机 ---
         self.vad_state = "IDLE"      # IDLE | SPEAKING
@@ -247,6 +284,11 @@ class Morpheus_Ear_System:
         return prob
 
     def _vad_process_chunk(self, chunk_np):
+        # 能量预检测：低能量且未在说话时跳过昂贵的 Silero VAD 推理
+        rms = np.sqrt(np.mean((chunk_np.astype(np.float32) / 32768.0) ** 2))
+        if rms < 0.005 and self.vad_state == "IDLE":
+            return None, False, None
+
         # Silero VAD 要求严格 512 样本 (16kHz)，将 CHUNK 切分为子帧取最大值
         VAD_FRAME = 512
         num_sub = len(chunk_np) // VAD_FRAME
@@ -269,7 +311,7 @@ class Morpheus_Ear_System:
             self.speech_buffer.append(chunk_np.copy())
             if speech_prob < VAD_THRESHOLD:
                 self.silence_counter += 1
-                if self.silence_counter >= SILENCE_CHUNKS:
+                if self.silence_counter >= self._silence_timeout_chunks:
                     vpr_audio = b"".join(chunk.tobytes() for chunk in self.speech_buffer)
                     asr_text = self._run_asr()
                     need_vpr = self._check_keywords(asr_text) if asr_text else False
@@ -296,21 +338,31 @@ class Morpheus_Ear_System:
     def _run_asr(self):
         if len(self.speech_buffer) == 0:
             return None
+        t0 = time.perf_counter()
         audio_data = b"".join(chunk.tobytes() for chunk in self.speech_buffer)
-        audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+        audio_np = np.frombuffer(audio_data, dtype=np.int16)
         duration = len(audio_np) / RATE
         if duration < 0.3:
             return None
         try:
-            result = self.asr_model.generate(
-                input=audio_np,
-                language="zh",
-                use_itn=True,
-                ban_emo_unk=True,
-            )
-            if result and len(result) > 0 and "text" in result[0]:
-                text = result[0]["text"].strip()
-                text = text.replace("。", "").replace("，", "").replace("？", "").replace("！", "").strip()
+            t1 = time.perf_counter()
+            with tempfile.NamedTemporaryFile(suffix='.pcm', delete=False) as f:
+                f.write(audio_np.tobytes())
+                tmp = f.name
+            try:
+                result = self._asr_recognizer.call(file=tmp)
+            finally:
+                os.unlink(tmp)
+            t2 = time.perf_counter()
+            sentences = result.get_sentence()
+            if isinstance(sentences, list):
+                text = ' '.join(s.get('text', '') for s in sentences if isinstance(s, dict)).strip()
+            elif isinstance(sentences, dict):
+                text = sentences.get('text', '').strip()
+            else:
+                text = ''
+            if text:
+                print(f"\n[ASR 耗时] 音频={duration:.1f}s  网络+API={t2-t1:.2f}s  总计={t2-t0:.2f}s")
                 return text
         except Exception as e:
             print(f"\n[ASR Error]: {e}")
@@ -481,26 +533,41 @@ class Morpheus_Ear_System:
     def _capture_loop(self):
         p = pyaudio.PyAudio()
         # 自动检测默认输入设备支持的最大通道数
-        try:
-            device_info = p.get_default_input_device_info()
-            max_input_ch = int(device_info['maxInputChannels'])
-        except Exception:
-            max_input_ch = 1
+        if self.input_device_idx is not None:
+            try:
+                device_info = p.get_device_info_by_index(self.input_device_idx)
+                max_input_ch = int(device_info['maxInputChannels'])
+                device_name = device_info['name']
+                print(f"[Morpheus Ear] 使用指定输入设备 [{self.input_device_idx}]: {device_name}")
+            except Exception:
+                print(f"[WARN] 设备索引 {self.input_device_idx} 无效，回退到默认设备")
+                self.input_device_idx = None
+
+        if self.input_device_idx is None:
+            try:
+                device_info = p.get_default_input_device_info()
+                max_input_ch = int(device_info['maxInputChannels'])
+            except Exception:
+                max_input_ch = 1
         actual_channels = min(CHANNELS, max_input_ch)
         if actual_channels < 4:
             print(f"[WARN] 默认设备仅支持 {actual_channels} 通道 "
                   f"(配置需要 {CHANNELS} 通道用于声源定位)，声源定位将受限。")
         self.actual_channels = actual_channels
 
-        stream = p.open(
+        stream_kwargs = dict(
             format=FORMAT,
             channels=actual_channels,
             rate=RATE,
             input=True,
             frames_per_buffer=CHUNK,
         )
+        if self.input_device_idx is not None:
+            stream_kwargs['input_device_index'] = self.input_device_idx
+        stream = p.open(**stream_kwargs)
         try:
             while not self.exit_flag:
+                self._frame_counter += 1
                 raw_data = stream.read(CHUNK, exception_on_overflow=False)
                 data_np = np.frombuffer(raw_data, dtype=np.int16).reshape(-1, actual_channels)
 
@@ -518,7 +585,8 @@ class Morpheus_Ear_System:
                     ]
                     best_idx = np.argmax(energies)
                     best_ch = [ch_up, ch_down, ch_left, ch_right][best_idx]
-                    self._localize(ch_up, ch_down, ch_left, ch_right)
+                    if self._frame_counter % self._localize_interval == 0:
+                        self._localize(ch_up, ch_down, ch_left, ch_right)
                 elif actual_channels == 2:
                     ch_up = data_np[:, 0]
                     ch_down = data_np[:, 0]  # 复用 ch0 作为占位
@@ -530,7 +598,8 @@ class Morpheus_Ear_System:
                     ]
                     best_idx = np.argmax(energies)
                     best_ch = [ch_left, ch_right][best_idx]
-                    self._localize_horizontal(ch_left, ch_right)
+                    if self._frame_counter % self._localize_interval == 0:
+                        self._localize_horizontal(ch_left, ch_right)
                 else:
                     best_ch = data_np[:, 0]
                     # 单通道无法定位
@@ -538,8 +607,23 @@ class Morpheus_Ear_System:
                 # AEC 处理
                 processed = self._process_aec(best_ch)
 
-                # VAD + ASR
-                asr_text, need_vpr, vpr_audio = self._vad_process_chunk(processed)
+                # VAD + ASR（降频：每 N 帧跑一次完整 VAD）
+                if self._frame_counter % self._vad_interval == 0:
+                    asr_text, need_vpr, vpr_audio = self._vad_process_chunk(processed)
+                else:
+                    asr_text = None
+                    need_vpr = False
+                    vpr_audio = None
+                    # 非 VAD 帧：如果在说话中，累积音频但不跑推理
+                    if self.vad_state == "SPEAKING":
+                        self.speech_buffer.append(processed.copy())
+                        if len(self.speech_buffer) > MAX_UTTERANCE_CHUNKS:
+                            vpr_audio = b"".join(chunk.tobytes() for chunk in self.speech_buffer)
+                            asr_text = self._run_asr()
+                            need_vpr = self._check_keywords(asr_text) if asr_text else False
+                            self.speech_buffer = []
+                            self.silence_counter = 0
+                            self.vad_state = "IDLE"
 
                 if asr_text:
                     print(f"\n[ASR]: {asr_text}")
@@ -560,8 +644,8 @@ class Morpheus_Ear_System:
 
     def start(self):
         print("\n" + "=" * 40)
-        print("   Morpheus 语音指挥中心 [SenseVoice 本地版]")
-        print("   模型: SenseVoiceSmall + CAM++ 声纹 + Silero VAD")
+        print("   Morpheus 语音指挥中心 [DashScope 在线版]")
+        print("   模型: Paraformer + CAM++ 声纹 + Silero VAD")
         print(f"   设备: {self.device}")
         print("   唤醒: '启动' | 休眠: '关机'")
         print("=" * 40)
@@ -570,19 +654,61 @@ class Morpheus_Ear_System:
         self._capture_loop()
 
 
-# ================= 4. 入口 =================
+# ================= 4. 单例锁定 =================
+def try_acquire_lock(port):
+    """尝试绑定锁定端口，防止同一脚本启动多个实例。返回 (lock_sock, True) 成功或 (None, False) 失败。"""
+    lock_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        lock_sock.bind(("127.0.0.1", port))
+        lock_sock.setblocking(False)
+        return lock_sock, True
+    except OSError:
+        lock_sock.close()
+        return None, False
+
+
+# ================= 5. 入口 =================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Morpheus Ear - SenseVoice Local ASR")
+    parser = argparse.ArgumentParser(description="Morpheus Ear - DashScope ASR + CAM++ 声纹")
     parser.add_argument(
         "--device", type=str, default="auto",
         choices=["auto", "cuda", "cuda:0", "cpu"],
         help="推理设备 (default: auto — 自动检测 CUDA)",
     )
+    parser.add_argument(
+        "--input-device", type=int, default=None,
+        help="PyAudio 输入设备索引 (default: None = 系统默认设备)。用 --list-devices 查看可用设备",
+    )
+    parser.add_argument(
+        "--list-devices", action="store_true",
+        help="列出所有音频输入设备并退出",
+    )
     args = parser.parse_args()
 
-    morpheus = Morpheus_Ear_System(device_str=args.device)
+    # ---- 单例锁定（防止重复启动） ----
+    lock_sock, acquired = try_acquire_lock(LOCK_PORT)
+    if not acquired:
+        print(f"[错误] 端口 {LOCK_PORT} 已被占用，说明已有实例在运行。请先终止已有进程。")
+        sys.exit(1)
+
+    if args.list_devices:
+        import pyaudio
+        p = pyaudio.PyAudio()
+        print("可用音频输入设备:")
+        for i in range(p.get_device_count()):
+            info = p.get_device_info_by_index(i)
+            if info['maxInputChannels'] > 0:
+                print(f"  [{i}] {info['name']}  (in={info['maxInputChannels']}, rate={int(info['defaultSampleRate'])})")
+        p.terminate()
+        sys.exit(0)
+
     try:
+        morpheus = Morpheus_Ear_System(device_str=args.device, input_device_idx=args.input_device)
         morpheus.start()
     except KeyboardInterrupt:
         print("\n>>> 听觉大脑已安全退出。")
-        morpheus.exit_flag = True
+    except Exception as e:
+        print(f"\n[错误] {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

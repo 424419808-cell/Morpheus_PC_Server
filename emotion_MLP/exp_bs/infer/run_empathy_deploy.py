@@ -185,7 +185,7 @@ def bs_to_servo(bs_arkit_52, models_dict):
 def main():
     parser = argparse.ArgumentParser(description="共情模型部署 — 机器人驱动")
     parser.add_argument("--no-udp", action="store_true", help="不发送UDP")
-    parser.add_argument("--cam", type=int, default=0, help="摄像头ID")
+    parser.add_argument("--cam", type=int, default=1, help="摄像头ID (默认 1=电脑摄像头, 0=iVCam)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
